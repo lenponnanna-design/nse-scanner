@@ -20,14 +20,12 @@ def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
     try:
-        response = requests.post(url, data=payload)
-        if response.status_code != 200:
-            print("Failed to send message:", response.text)
+        requests.post(url, data=payload)
     except Exception as e:
         print("Error sending Telegram message:", e)
 
 # ----------------------------
-# Candlestick patterns detection
+# Candlestick and breakout detection
 # ----------------------------
 def detect_patterns(df, stock_name):
     messages = []
@@ -70,20 +68,22 @@ def detect_patterns(df, stock_name):
             messages.append("Trend Line Breakout ⬆️")
 
     if messages:
-        return [f"{stock_name}: {', '.join(messages)}"]
+        # Include price change to sort later
+        price_change = today['Close'] - today['Open']
+        return [{"stock": stock_name, "message": ", ".join(messages), "change": price_change}]
     return []
 
 # ----------------------------
-# Scan NSE stocks
+# Scan NSE stocks and send sorted summary
 # ----------------------------
 def scan_stocks(limit=40):
     nse = Nse()
-    stock_codes = nse.get_stock_codes()[1:]  # skip 'SYMBOL'
+    stock_codes = nse.get_stock_codes()[1:]  # skip header
 
-    summary_messages = []
+    summary_list = []
 
     for stock in stock_codes:
-        if len(summary_messages) >= limit:
+        if len(summary_list) >= limit:
             break
         try:
             df = get_history(symbol=stock, start=date.today(), end=date.today())
@@ -91,10 +91,15 @@ def scan_stocks(limit=40):
                 continue
             patterns = detect_patterns(df, stock)
             if patterns:
-                summary_messages.extend(patterns)
-        except Exception as e:
-            print(f"Error scanning {stock}: {e}")
+                summary_list.extend(patterns)
+        except:
+            continue  # skip failed stocks
 
+    # Sort by absolute price change (descending)
+    summary_list.sort(key=lambda x: abs(x["change"]), reverse=True)
+    summary_messages = [f"{item['stock']}: {item['message']}" for item in summary_list[:limit]]
+
+    # Send Telegram message
     if summary_messages:
         summary_text = "📊 NSE Daily Summary:\n" + "\n".join(summary_messages)
         send_telegram_message(summary_text)
