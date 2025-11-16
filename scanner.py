@@ -3,17 +3,18 @@ import requests
 import pandas as pd
 from nsepy import get_history
 from datetime import date, timedelta
+from nsetools import Nse
 from dotenv import load_dotenv
 
 # ----------------------------
 # Load environment variables
 # ----------------------------
-load_dotenv()  # for local .env
+load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 # ----------------------------
-# Telegram messaging function
+# Telegram messaging
 # ----------------------------
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -26,38 +27,38 @@ def send_telegram_message(message):
         print("Error sending Telegram message:", e)
 
 # ----------------------------
-# Candlestick pattern detection
+# Detect candlestick patterns
 # ----------------------------
 def detect_patterns(df, stock_name):
     messages = []
     if df.empty:
         return messages
     
-    # Simple example: Bullish Engulfing
+    # Bullish Engulfing
     if len(df) >= 2:
         if df['Close'].iloc[-1] > df['Open'].iloc[-1] and df['Open'].iloc[-1] < df['Close'].iloc[-2] and df['Close'].iloc[-1] > df['Open'].iloc[-2]:
-            messages.append(f"{stock_name}: Bullish Engulfing detected ✅")
+            messages.append(f"{stock_name}: Bullish Engulfing ✅")
     
-    # Example: Spinning Top
+    # Spinning Top
     last_candle = df.iloc[-1]
     body = abs(last_candle['Close'] - last_candle['Open'])
     candle_range = last_candle['High'] - last_candle['Low']
     if candle_range > 0 and body / candle_range < 0.3:
-        messages.append(f"{stock_name}: Spinning Top detected 🔹")
+        messages.append(f"{stock_name}: Spinning Top 🔹")
     
     return messages
 
 # ----------------------------
-# Main scanning function
+# Scan all NSE stocks
 # ----------------------------
 def scan_stocks():
-    # Replace with your actual list of stocks
-    stocks = ["RELIANCE", "TCS", "INFY"]  
-
+    nse = Nse()
+    stock_codes = list(nse.get_stock_codes().keys())[1:]  # skip first 'SYMBOL'
+    
     end_date = date.today()
-    start_date = end_date - timedelta(days=5)  # last 5 days
-
-    for stock in stocks:
+    start_date = end_date - timedelta(days=5)
+    
+    for stock in stock_codes:
         try:
             df = get_history(symbol=stock, start=start_date, end=end_date)
             patterns = detect_patterns(df, stock)
