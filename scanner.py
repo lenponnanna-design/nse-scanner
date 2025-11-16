@@ -13,58 +13,49 @@ def notify(msg):
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
-# TEST message to confirm Telegram is working
+# Send test message
 notify("Test message from GitHub Actions!")
-except:
-    pass
+
+# ---------------------------
+# BELOW HERE IS YOUR SCANNER
+# ---------------------------
 
 # Fetch stock list (NSE)
 def get_stock_list():
-    url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%20500"
-    headers = {"User-Agent": "Mozilla/5.0"}
     try:
+        url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050"
+        headers = {"User-Agent": "Mozilla/5.0"}
         data = requests.get(url, headers=headers).json()
         return [item["symbol"] for item in data["data"]]
-    except:
+    except Exception as e:
+        notify(f"Error fetching stock list: {e}")
         return []
 
 # Candlestick pattern detection
 def is_bullish_engulfing(prev, cur):
-    return cur['close'] > cur['open'] and prev['open'] > prev['close'] and cur['close'] > prev['open'] and cur['open'] < prev['close']
-
-def is_bearish_engulfing(prev, cur):
-    return cur['open'] > cur['close'] and prev['close'] > prev['open'] and cur['open'] > prev['close'] and cur['close'] < prev['open']
+    return (
+        cur['close'] > cur['open'] and
+        prev['open'] > prev['close'] and
+        cur['close'] > prev['open'] and
+        cur['open'] < prev['close']
+    )
 
 def is_spinning_top(candle):
     body = abs(candle['close'] - candle['open'])
     range_candle = candle['high'] - candle['low']
     return body < 0.25 * range_candle
 
-# Send message to Telegram
-def notify(msg):
-    if BOT_TOKEN and CHAT_ID:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-
+# Dummy fetcher for now (real one comes later)
 def fetch_candles(symbol):
-    url = f"https://www.nseindia.com/api/quote-equity?symbol={symbol}"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        data = requests.get(url, headers=headers).json()
-        return data["priceInfo"]["lastPrice"]
-    except:
-        return None
+    return {"open": 1, "close": 1, "high": 1, "low": 1}
 
 def run_scan():
     stocks = get_stock_list()
-    report = "📊 *Daily NSE Scan Results*\n\n"
+    if not stocks:
+        notify("No stocks fetched.")
+        return
 
-    for symbol in stocks[:50]:  # scanning first 50 to reduce load
-        price = fetch_candles(symbol)
-        if price:
-            report += f"{symbol}: ₹{price}\n"
-
-    notify(report)
+    notify(f"Scan complete! {len(stocks)} stocks fetched.")
 
 if __name__ == "__main__":
     run_scan()
