@@ -1,15 +1,20 @@
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
+import os
 
-BOT_TOKEN = None
-CHAT_ID = None
+# Load secrets from GitHub
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
-# Load secrets from GitHub Actions
-try:
-    import os
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-    CHAT_ID = os.getenv("CHAT_ID")
+# Send message to Telegram
+def notify(msg):
+    if BOT_TOKEN and CHAT_ID:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+
+# TEST message to confirm Telegram is working
+notify("Test message from GitHub Actions!")
 except:
     pass
 
