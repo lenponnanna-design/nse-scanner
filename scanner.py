@@ -1,3 +1,10 @@
+import os
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+
+print("BOT_TOKEN starts with:", BOT_TOKEN[:6] if BOT_TOKEN else "None")
+print("CHAT_ID:", CHAT_ID)
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
