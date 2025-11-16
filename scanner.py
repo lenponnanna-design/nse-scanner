@@ -1,68 +1,73 @@
 import os
-
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
-
-print("BOT_TOKEN starts with:", BOT_TOKEN[:6] if BOT_TOKEN else "None")
-print("CHAT_ID:", CHAT_ID)
 import requests
 import pandas as pd
-from datetime import datetime, timedelta
-import os
+from nsepy import get_history
+from datetime import date, timedelta
+from dotenv import load_dotenv
 
-# Load secrets from GitHub
+# ----------------------------
+# Load environment variables
+# ----------------------------
+load_dotenv()  # for local .env
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# Send message to Telegram
-def notify(msg):
-    if BOT_TOKEN and CHAT_ID:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-
-# Send test message
-notify("Test message from GitHub Actions!")
-
-# ---------------------------
-# BELOW HERE IS YOUR SCANNER
-# ---------------------------
-
-# Fetch stock list (NSE)
-def get_stock_list():
+# ----------------------------
+# Telegram messaging function
+# ----------------------------
+def send_telegram_message(message):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
     try:
-        url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        data = requests.get(url, headers=headers).json()
-        return [item["symbol"] for item in data["data"]]
+        response = requests.post(url, data=payload)
+        if response.status_code != 200:
+            print("Failed to send message:", response.text)
     except Exception as e:
-        notify(f"Error fetching stock list: {e}")
-        return []
+        print("Error sending Telegram message:", e)
 
+# ----------------------------
 # Candlestick pattern detection
-def is_bullish_engulfing(prev, cur):
-    return (
-        cur['close'] > cur['open'] and
-        prev['open'] > prev['close'] and
-        cur['close'] > prev['open'] and
-        cur['open'] < prev['close']
-    )
+# ----------------------------
+def detect_patterns(df, stock_name):
+    messages = []
+    if df.empty:
+        return messages
+    
+    # Simple example: Bullish Engulfing
+    if len(df) >= 2:
+        if df['Close'].iloc[-1] > df['Open'].iloc[-1] and df['Open'].iloc[-1] < df['Close'].iloc[-2] and df['Close'].iloc[-1] > df['Open'].iloc[-2]:
+            messages.append(f"{stock_name}: Bullish Engulfing detected ✅")
+    
+    # Example: Spinning Top
+    last_candle = df.iloc[-1]
+    body = abs(last_candle['Close'] - last_candle['Open'])
+    candle_range = last_candle['High'] - last_candle['Low']
+    if candle_range > 0 and body / candle_range < 0.3:
+        messages.append(f"{stock_name}: Spinning Top detected 🔹")
+    
+    return messages
 
-def is_spinning_top(candle):
-    body = abs(candle['close'] - candle['open'])
-    range_candle = candle['high'] - candle['low']
-    return body < 0.25 * range_candle
+# ----------------------------
+# Main scanning function
+# ----------------------------
+def scan_stocks():
+    # Replace with your actual list of stocks
+    stocks = ["RELIANCE", "TCS", "INFY"]  
 
-# Dummy fetcher for now (real one comes later)
-def fetch_candles(symbol):
-    return {"open": 1, "close": 1, "high": 1, "low": 1}
+    end_date = date.today()
+    start_date = end_date - timedelta(days=5)  # last 5 days
 
-def run_scan():
-    stocks = get_stock_list()
-    if not stocks:
-        notify("No stocks fetched.")
-        return
+    for stock in stocks:
+        try:
+            df = get_history(symbol=stock, start=start_date, end=end_date)
+            patterns = detect_patterns(df, stock)
+            for pattern_msg in patterns:
+                send_telegram_message(pattern_msg)
+        except Exception as e:
+            print(f"Error scanning {stock}: {e}")
 
-    notify(f"Scan complete! {len(stocks)} stocks fetched.")
-
+# ----------------------------
+# Run scanner
+# ----------------------------
 if __name__ == "__main__":
-    run_scan()
+    scan_stocks()
