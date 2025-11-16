@@ -51,21 +51,31 @@ def detect_patterns(df, stock_name):
 # ----------------------------
 # Scan all NSE stocks
 # ----------------------------
-def scan_stocks():
+def scan_stocks(limit=20):
     nse = Nse()
     stock_codes = list(nse.get_stock_codes().keys())[1:]  # skip first 'SYMBOL'
     
     end_date = date.today()
     start_date = end_date - timedelta(days=5)
     
+    summary_messages = []
+    
     for stock in stock_codes:
+        if len(summary_messages) >= limit:
+            break
         try:
             df = get_history(symbol=stock, start=start_date, end=end_date)
             patterns = detect_patterns(df, stock)
-            for pattern_msg in patterns:
-                send_telegram_message(pattern_msg)
+            if patterns:
+                summary_messages.append(patterns[0])  # take first pattern per stock
         except Exception as e:
             print(f"Error scanning {stock}: {e}")
+    
+    if summary_messages:
+        summary_text = "📊 NSE Daily Summary:\n" + "\n".join(summary_messages)
+        send_telegram_message(summary_text)
+    else:
+        send_telegram_message("📊 NSE Daily Summary: No patterns detected today.")
 
 # ----------------------------
 # Run scanner
