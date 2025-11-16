@@ -49,11 +49,11 @@ def detect_patterns(df, stock_name):
     return messages
 
 # ----------------------------
-# Scan all NSE stocks
+# Scan all NSE stocks and send summary
 # ----------------------------
 def scan_stocks(limit=20):
     nse = Nse()
-    stock_codes = list(nse.get_stock_codes().keys())[1:]  # skip first 'SYMBOL'
+    stock_codes = nse.get_stock_codes()  # returns list of stock symbols
     
     end_date = date.today()
     start_date = end_date - timedelta(days=5)
