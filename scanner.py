@@ -2,7 +2,7 @@ import os
 import requests
 import pandas as pd
 from nsepy import get_history
-from datetime import date, timedelta
+from datetime import date
 from nsetools import Nse
 from dotenv import load_dotenv
 
@@ -40,43 +40,45 @@ def detect_patterns(df, stock_name):
 
         # Bullish Engulfing
         if today['Close'] > today['Open'] and today['Open'] < yesterday['Close'] and today['Close'] > yesterday['Open']:
-            messages.append(f"{stock_name}: Bullish Engulfing ✅")
+            messages.append("Bullish Engulfing ✅")
 
         # Hammer
         body = abs(today['Close'] - today['Open'])
         lower_shadow = today['Open'] - today['Low'] if today['Close'] >= today['Open'] else today['Close'] - today['Low']
         upper_shadow = today['High'] - max(today['Close'], today['Open'])
         if body <= (today['High'] - today['Low']) * 0.3 and lower_shadow > 2 * body and upper_shadow < body:
-            messages.append(f"{stock_name}: Hammer 🔨")
+            messages.append("Hammer 🔨")
 
         # Shooting Star
         if body <= (today['High'] - today['Low']) * 0.3 and upper_shadow > 2 * body and lower_shadow < body:
-            messages.append(f"{stock_name}: Shooting Star 🌟")
+            messages.append("Shooting Star 🌟")
 
     # Spinning Top
     body = abs(today['Close'] - today['Open'])
     candle_range = today['High'] - today['Low']
     if candle_range > 0 and body / candle_range < 0.3:
-        messages.append(f"{stock_name}: Spinning Top 🔹")
+        messages.append("Spinning Top 🔹")
 
     # Resistance breakout (today's close > yesterday's high)
     if len(df) >= 2 and today['Close'] > df['High'].max():
-        messages.append(f"{stock_name}: Resistance Breakout 📈")
+        messages.append("Resistance Breakout 📈")
 
     # Trend line breakout (today's close > 5-day moving average)
     if len(df) >= 5:
         ma5 = df['Close'][-5:].mean()
         if today['Close'] > ma5:
-            messages.append(f"{stock_name}: Trend Line Breakout ⬆️")
+            messages.append("Trend Line Breakout ⬆️")
 
-    return messages
+    if messages:
+        return [f"{stock_name}: {', '.join(messages)}"]
+    return []
 
 # ----------------------------
-# Scan all NSE stocks and send summary
+# Scan NSE stocks
 # ----------------------------
 def scan_stocks(limit=40):
     nse = Nse()
-    stock_codes = nse.get_stock_codes()[1:]  # skip SYMBOL header
+    stock_codes = nse.get_stock_codes()[1:]  # skip 'SYMBOL'
 
     summary_messages = []
 
@@ -85,9 +87,11 @@ def scan_stocks(limit=40):
             break
         try:
             df = get_history(symbol=stock, start=date.today(), end=date.today())
+            if df.empty:
+                continue
             patterns = detect_patterns(df, stock)
             if patterns:
-                summary_messages.append(", ".join(patterns))  # combine multiple patterns per stock
+                summary_messages.extend(patterns)
         except Exception as e:
             print(f"Error scanning {stock}: {e}")
 
