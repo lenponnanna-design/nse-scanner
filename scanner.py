@@ -100,7 +100,7 @@ def detect_patterns(df, stock_name):
         recent_df = df[-LOOKBACK_DAYS:]
         highs = recent_df['High'].values
         x_vals = np.arange(len(highs))
-        peak_indices, _ = find_peaks(highs, distance=3)  # distance can be tuned
+        peak_indices, _ = find_peaks(highs, distance=3)
         if len(peak_indices) >= 2:
             y = highs[peak_indices]
             x = x_vals[peak_indices]
@@ -129,14 +129,14 @@ def detect_patterns(df, stock_name):
     return patterns_list
 
 # ----------------------------
-# Get Nifty Groups
+# Get official Nifty Groups
 # ----------------------------
 def get_nifty_groups():
-    # Replace these lists with actual NSE symbols
-    nifty_50 = ["RELIANCE","TCS","HDFCBANK","INFY"]
-    nifty_next_50 = ["AUROPHARMA","ADANIPORTS"]
-    nifty_bank = ["ICICIBANK","KOTAKBANK"]
-    nifty_100 = ["BAJAJ-AUTO","LT"]
+    nse = Nse()
+    nifty_50 = list(nse.get_index_constituents("NIFTY 50").keys())
+    nifty_next_50 = list(nse.get_index_constituents("NIFTY NEXT 50").keys())
+    nifty_bank = list(nse.get_index_constituents("NIFTY BANK").keys())
+    nifty_100 = list(nse.get_index_constituents("NIFTY 100").keys())
     return [
         ("Nifty 50", nifty_50),
         ("Nifty Next 50", nifty_next_50),
