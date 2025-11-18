@@ -18,6 +18,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", 40))
+MAX_PATTERNS = int(os.getenv("MAX_PATTERNS", 40))
 
 # ----------------------------
 # Telegram messaging
@@ -44,7 +45,6 @@ def fetch_history(stock_symbol, start_date, end_date):
         return df
     except:
         try:
-            # YFinance fallback
             df = yf.download(stock_symbol + ".NS",
                              start=start_date, end=end_date,
                              progress=False, auto_adjust=False)
@@ -150,12 +150,12 @@ def get_nifty_groups():
         "RELIANCE","TCS","HDFCBANK","INFY","HDFC","ICICIBANK","KOTAKBANK",
         "SBIN","LT","ITC","AXISBANK","HCLTECH","BHARTIARTL","ASIANPAINT",
         "BAJFINANCE","MARUTI","NESTLEIND","SUNPHARMA","HDFCLIFE","TECHM",
-        # ... complete list
+        # Add full list
     ]
 
     nifty_next_50 = [
         "ADANITRANS","BANDHANBNK","ALOKINDS","MUTHOOTFIN","ICICIPRULI",
-        # ... complete list
+        # Add full list
     ]
 
     nifty_bank = ["HDFCBANK","ICICIBANK","KOTAKBANK","SBIN","AXISBANK"]
@@ -172,12 +172,27 @@ def get_nifty_groups():
 # ----------------------------
 # Main Scanner
 # ----------------------------
-def scan_stocks(max_patterns=40):
+def scan_stocks(max_patterns=MAX_PATTERNS):
     nse = Nse()
     all_stock_codes = nse.get_stock_codes()[1:]
     summary_list = []
     group_lists = get_nifty_groups()
     scanned_stocks = set()
+
+    batch_patterns = []
+
+    def send_batch(batch):
+        if not batch:
+            return
+        grouped = defaultdict(list)
+        for item in batch:
+            grouped[item['group']].append(f"{item['stock']}: {item['message']}")
+        msg_lines = ["📊 <b>NSE Daily Summary</b>:"]
+        for group_name in ["Nifty 50","Nifty Next 50","Nifty Bank","Nifty 100","Other NSE"]:
+            if group_name in grouped:
+                msg_lines.append(f"\n<b>{group_name}:</b>")
+                msg_lines.extend(grouped[group_name])
+        send_telegram_message("\n".join(msg_lines))
 
     # Scan priority groups
     for group_name, group_stocks in group_lists:
@@ -190,9 +205,13 @@ def scan_stocks(max_patterns=40):
             patterns = detect_patterns(df, stock)
             for p in patterns:
                 p['group'] = group_name
-            summary_list.extend(patterns)
+            batch_patterns.extend(patterns)
             scanned_stocks.add(stock)
             time.sleep(0.1)
+
+            if len(batch_patterns) >= max_patterns:
+                send_batch(batch_patterns[:max_patterns])
+                batch_patterns = batch_patterns[max_patterns:]
 
     # Scan remaining NSE stocks
     for stock in all_stock_codes:
@@ -204,27 +223,19 @@ def scan_stocks(max_patterns=40):
         patterns = detect_patterns(df, stock)
         for p in patterns:
             p['group'] = "Other NSE"
-        summary_list.extend(patterns)
+        batch_patterns.extend(patterns)
         scanned_stocks.add(stock)
         time.sleep(0.1)
 
-    # Sort globally by candle strength
-    summary_list.sort(key=lambda x: x['change'], reverse=True)
+        if len(batch_patterns) >= max_patterns:
+            send_batch(batch_patterns[:max_patterns])
+            batch_patterns = batch_patterns[max_patterns:]
 
-    # Send messages in chunks of max_patterns
-    for i in range(0, len(summary_list), max_patterns):
-        chunk = summary_list[i:i+max_patterns]
-        grouped = defaultdict(list)
-        for item in chunk:
-            grouped[item['group']].append(f"{item['stock']}: {item['message']}")
-        msg_lines = ["📊 <b>NSE Daily Summary</b>:"]
-        for group_name in ["Nifty 50","Nifty Next 50","Nifty Bank","Nifty 100","Other NSE"]:
-            if group_name in grouped:
-                msg_lines.append(f"\n<b>{group_name}:</b>")
-                msg_lines.extend(grouped[group_name])
-        send_telegram_message("\n".join(msg_lines))
+    # Send remaining patterns
+    if batch_patterns:
+        send_batch(batch_patterns)
 
-    if not summary_list:
+    if not scanned_stocks:
         send_telegram_message("📊 <b>NSE Daily Summary</b>: No patterns detected today.")
 
 # ----------------------------
