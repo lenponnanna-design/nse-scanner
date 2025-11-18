@@ -21,11 +21,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install nsepy nsetools pandas requests python-dotenv yfinance
+          pip install --upgrade nsepy nsetools
+          pip install pandas requests python-dotenv yfinance
 
       - name: Run scanner
+        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
-          python nse.py
+          python scanner.py
