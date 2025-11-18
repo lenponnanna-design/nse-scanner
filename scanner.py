@@ -129,14 +129,29 @@ def detect_patterns(df, stock_name):
     return patterns_list
 
 # ----------------------------
-# Get official Nifty Groups
+# Static Nifty Lists
 # ----------------------------
 def get_nifty_groups():
-    nse = Nse()
-    nifty_50 = list(nse.get_index_constituents("NIFTY 50").keys())
-    nifty_next_50 = list(nse.get_index_constituents("NIFTY NEXT 50").keys())
-    nifty_bank = list(nse.get_index_constituents("NIFTY BANK").keys())
-    nifty_100 = list(nse.get_index_constituents("NIFTY 100").keys())
+    # Nifty 50 (top 50 large-cap stocks)
+    nifty_50 = [
+        "RELIANCE","TCS","HDFCBANK","INFY","HDFC","ICICIBANK","KOTAKBANK",
+        "SBIN","LT","ITC","AXISBANK","HCLTECH","BHARTIARTL","ASIANPAINT",
+        "BAJFINANCE","MARUTI","NESTLEIND","SUNPHARMA","HDFC LIFE","TECHM",
+        # ... add all Nifty 50 symbols here
+    ]
+
+    # Nifty Next 50 (mid-cap)
+    nifty_next_50 = [
+        "ADANITRANS","BANDHANBNK","ALOKINDS","MUTHOOTFIN","ICICIPRULI",
+        # ... add all Nifty Next 50 symbols here
+    ]
+
+    # Nifty Bank
+    nifty_bank = ["HDFCBANK","ICICIBANK","KOTAKBANK","SBIN","AXISBANK"]
+
+    # Nifty 100 (can be combination of above)
+    nifty_100 = list(set(nifty_50 + nifty_next_50))
+
     return [
         ("Nifty 50", nifty_50),
         ("Nifty Next 50", nifty_next_50),
@@ -169,7 +184,7 @@ def scan_stocks(max_patterns=40):
             scanned_stocks.add(stock)
             time.sleep(0.1)
 
-    # Scan remaining stocks
+    # Scan remaining NSE stocks
     for stock in all_stock_codes:
         if stock in scanned_stocks:
             continue
