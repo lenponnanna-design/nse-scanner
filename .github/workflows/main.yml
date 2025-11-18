@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout the repository
+      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
@@ -38,9 +38,9 @@ jobs:
           python scanner.py 2>&1 | tee scan_log.txt
           echo "Scan completed. Logs saved to scan_log.txt"
 
-      # 5️⃣ Upload scan logs as artifact
+      # 5️⃣ Upload scan logs
       - name: Upload scan logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: nse-scan-logs
           path: scan_log.txt
