@@ -21,19 +21,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install nsepy pandas requests python-dotenv
 
-      - name: Run NSE scanner
+      - name: Run scanner with logging
         continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          LOOKBACK_DAYS: 40
-          MAX_PATTERNS: 40
         run: |
           echo "Starting NSE scan at $(date)..."
-          
-          # Run scanner and log output
           python scanner.py 2>&1 | tee scan_log.txt
-          
           echo "Scan completed. Logs saved to scan_log.txt"
