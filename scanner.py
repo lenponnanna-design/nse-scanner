@@ -44,15 +44,28 @@ def fetch_history(stock_symbol, start_date, end_date):
         return df
     except:
         try:
-            df = yf.download(stock_symbol + ".NS", start=start_date, end=end_date, progress=False)
+            # YFinance fallback
+            df = yf.download(stock_symbol + ".NS",
+                             start=start_date, end=end_date,
+                             progress=False, auto_adjust=False)
+
             if df.empty:
                 return pd.DataFrame()
+
+            # Flatten MultiIndex if present
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.droplevel(0)
+
+            # Ensure required columns exist
+            required_cols = ['Open', 'High', 'Low', 'Close']
+            if not all(col in df.columns for col in required_cols):
+                print(f"Missing columns for {stock_symbol}, skipping.")
+                return pd.DataFrame()
+
+            df = df[required_cols]  # select only needed columns
             df.index = pd.to_datetime(df.index)
-            df.index.name = None
-            df = df.rename(columns={"Close": "Close", "Open": "Open", "High": "High", "Low": "Low"})
             return df
+
         except Exception as e:
             print(f"Failed to fetch data for {stock_symbol}: {e}")
             return pd.DataFrame()
@@ -74,7 +87,8 @@ def detect_patterns(df, stock_name):
         messages.append("Bullish Engulfing ✅")
 
     # Piercing Line
-    if yesterday['Close'] < yesterday['Open'] and today['Close'] > today['Open'] and today['Open'] < yesterday['Low'] and today['Close'] > (yesterday['Close'] + yesterday['Open'])/2:
+    if yesterday['Close'] < yesterday['Open'] and today['Close'] > today['Open'] \
+       and today['Open'] < yesterday['Low'] and today['Close'] > (yesterday['Close'] + yesterday['Open'])/2:
         messages.append("Piercing Line 🟢")
 
     # Hammer
@@ -132,24 +146,20 @@ def detect_patterns(df, stock_name):
 # Static Nifty Lists
 # ----------------------------
 def get_nifty_groups():
-    # Nifty 50 (top 50 large-cap stocks)
     nifty_50 = [
         "RELIANCE","TCS","HDFCBANK","INFY","HDFC","ICICIBANK","KOTAKBANK",
         "SBIN","LT","ITC","AXISBANK","HCLTECH","BHARTIARTL","ASIANPAINT",
-        "BAJFINANCE","MARUTI","NESTLEIND","SUNPHARMA","HDFC LIFE","TECHM",
-        # ... add all Nifty 50 symbols here
+        "BAJFINANCE","MARUTI","NESTLEIND","SUNPHARMA","HDFCLIFE","TECHM",
+        # ... complete list
     ]
 
-    # Nifty Next 50 (mid-cap)
     nifty_next_50 = [
         "ADANITRANS","BANDHANBNK","ALOKINDS","MUTHOOTFIN","ICICIPRULI",
-        # ... add all Nifty Next 50 symbols here
+        # ... complete list
     ]
 
-    # Nifty Bank
     nifty_bank = ["HDFCBANK","ICICIBANK","KOTAKBANK","SBIN","AXISBANK"]
 
-    # Nifty 100 (can be combination of above)
     nifty_100 = list(set(nifty_50 + nifty_next_50))
 
     return [
