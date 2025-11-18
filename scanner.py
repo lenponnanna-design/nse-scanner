@@ -5,6 +5,7 @@ from nsepy import get_history
 from datetime import date
 from nsetools import Nse
 from dotenv import load_dotenv
+import time
 
 # ----------------------------
 # Load environment variables
@@ -96,12 +97,11 @@ def detect_patterns(df, stock_name):
     return []
 
 # ----------------------------
-# Scan NSE stocks and send sorted summary
+# Scan NSE stocks and send summary
 # ----------------------------
 def scan_stocks(limit=40):
     nse = Nse()
     stock_codes = nse.get_stock_codes()[1:]  # skip header
-
     summary_list = []
 
     for stock in stock_codes:
@@ -122,23 +122,26 @@ def scan_stocks(limit=40):
             if patterns:
                 summary_list.extend(patterns)
 
-        except:
+            time.sleep(0.1)  # prevent rate limits
+
+        except Exception as e:
+            print(f"Skipping {stock}: {e}")
             continue  # skip errors silently
 
     # Sort by strongest candle
     summary_list.sort(key=lambda x: abs(x["change"]), reverse=True)
 
     summary_messages = [
-        f"{item['stock']}: {item['message']}"
+        f"<b>{item['stock']}</b>: {item['message']}"
         for item in summary_list[:limit]
     ]
 
     # Send Telegram message
     if summary_messages:
-        summary_text = "📊 NSE Daily Summary:\n" + "\n".join(summary_messages)
+        summary_text = "📊 <b>NSE Daily Summary</b>:\n" + "\n".join(summary_messages)
         send_telegram_message(summary_text)
     else:
-        send_telegram_message("📊 NSE Daily Summary: No patterns detected today.")
+        send_telegram_message("📊 <b>NSE Daily Summary</b>: No patterns detected today.")
 
 # ----------------------------
 # Run scanner
