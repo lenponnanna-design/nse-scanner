@@ -2,9 +2,7 @@ import os
 import requests
 import pandas as pd
 import numpy as np
-from nsepy import get_history
 from datetime import date, timedelta
-from nsetools import Nse
 from dotenv import load_dotenv
 import time
 import yfinance as yf
@@ -35,43 +33,29 @@ def send_telegram_message(message):
             print("Error sending Telegram message:", e)
 
 # ----------------------------
-# Fetch historical data (nsepy with yfinance fallback)
+# Fetch historical data using YFinance
 # ----------------------------
 def fetch_history(stock_symbol, start_date, end_date):
     try:
-        df = get_history(symbol=stock_symbol, start=start_date, end=end_date)
+        df = yf.download(stock_symbol + ".NS",
+                         start=start_date, end=end_date,
+                         progress=False, auto_adjust=False)
         if df.empty:
-            raise ValueError("Empty data from nsepy")
-        return df
-    except:
-        try:
-            df = yf.download(stock_symbol + ".NS",
-                             start=start_date, end=end_date,
-                             progress=False, auto_adjust=False)
-
-            if df.empty:
-                return pd.DataFrame()
-
-            # Flatten MultiIndex if present
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.droplevel(0)
-
-            # Ensure required columns exist
-            required_cols = ['Open', 'High', 'Low', 'Close']
-            if not all(col in df.columns for col in required_cols):
-                print(f"Missing columns for {stock_symbol}, skipping.")
-                return pd.DataFrame()
-
-            df = df[required_cols]  # select only needed columns
-            df.index = pd.to_datetime(df.index)
-            return df
-
-        except Exception as e:
-            print(f"Failed to fetch data for {stock_symbol}: {e}")
             return pd.DataFrame()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(0)
+        required_cols = ['Open', 'High', 'Low', 'Close']
+        if not all(col in df.columns for col in required_cols):
+            return pd.DataFrame()
+        df = df[required_cols]
+        df.index = pd.to_datetime(df.index)
+        return df
+    except Exception as e:
+        print(f"Failed to fetch {stock_symbol}: {e}")
+        return pd.DataFrame()
 
 # ----------------------------
-# Patterns detection
+# Detect patterns
 # ----------------------------
 def detect_patterns(df, stock_name):
     patterns_list = []
@@ -109,7 +93,7 @@ def detect_patterns(df, stock_name):
         if today['Close'] > prior_high:
             messages.append("Resistance Breakout 📈")
 
-    # Trend Line Breakout using scipy peaks
+    # Trend Line Breakout
     if len(df) >= LOOKBACK_DAYS:
         recent_df = df[-LOOKBACK_DAYS:]
         highs = recent_df['High'].values
@@ -123,7 +107,7 @@ def detect_patterns(df, stock_name):
             if today['Close'] >= trend_y * 0.995:
                 messages.append("Trend Line Breakout ⬆️")
 
-    # Cup & Handle detection (approx, 30 days)
+    # Cup & Handle detection (~30 days)
     if len(df) >= 30:
         cup_df = df[-30:]
         left_rim = cup_df['High'].max()
@@ -143,42 +127,31 @@ def detect_patterns(df, stock_name):
     return patterns_list
 
 # ----------------------------
-# Static Nifty Lists
+# Static Nifty groups and all NSE symbols
 # ----------------------------
-def get_nifty_groups():
-    nifty_50 = [
-        "RELIANCE","TCS","HDFCBANK","INFY","HDFC","ICICIBANK","KOTAKBANK",
-        "SBIN","LT","ITC","AXISBANK","HCLTECH","BHARTIARTL","ASIANPAINT",
-        "BAJFINANCE","MARUTI","NESTLEIND","SUNPHARMA","HDFCLIFE","TECHM",
-        # Add full list
-    ]
-
-    nifty_next_50 = [
-        "ADANITRANS","BANDHANBNK","ALOKINDS","MUTHOOTFIN","ICICIPRULI",
-        # Add full list
-    ]
-
+def get_stock_groups():
+    nifty_50 = ["RELIANCE","TCS","HDFCBANK","INFY","HDFC","ICICIBANK","KOTAKBANK",
+                "SBIN","LT","ITC","AXISBANK","HCLTECH","BHARTIARTL","ASIANPAINT",
+                "BAJFINANCE","MARUTI","NESTLEIND","SUNPHARMA","HDFCLIFE","TECHM"]
+    nifty_next_50 = ["ADANITRANS","BANDHANBNK","ALOKINDS","MUTHOOTFIN","ICICIPRULI"]
     nifty_bank = ["HDFCBANK","ICICIBANK","KOTAKBANK","SBIN","AXISBANK"]
-
     nifty_100 = list(set(nifty_50 + nifty_next_50))
+    all_stocks = list(set(nifty_50 + nifty_next_50 + nifty_bank))  # Add more if needed
 
     return [
         ("Nifty 50", nifty_50),
         ("Nifty Next 50", nifty_next_50),
         ("Nifty Bank", nifty_bank),
-        ("Nifty 100", nifty_100)
+        ("Nifty 100", nifty_100),
+        ("Other NSE", all_stocks)
     ]
 
 # ----------------------------
-# Main Scanner
+# Main scanner
 # ----------------------------
 def scan_stocks(max_patterns=MAX_PATTERNS):
-    nse = Nse()
-    all_stock_codes = nse.get_stock_codes()[1:]
-    summary_list = []
-    group_lists = get_nifty_groups()
+    group_lists = get_stock_groups()
     scanned_stocks = set()
-
     batch_patterns = []
 
     def send_batch(batch):
@@ -212,24 +185,6 @@ def scan_stocks(max_patterns=MAX_PATTERNS):
             if len(batch_patterns) >= max_patterns:
                 send_batch(batch_patterns[:max_patterns])
                 batch_patterns = batch_patterns[max_patterns:]
-
-    # Scan remaining NSE stocks
-    for stock in all_stock_codes:
-        if stock in scanned_stocks:
-            continue
-        df = fetch_history(stock, date.today()-timedelta(days=60), date.today())
-        if df.empty:
-            continue
-        patterns = detect_patterns(df, stock)
-        for p in patterns:
-            p['group'] = "Other NSE"
-        batch_patterns.extend(patterns)
-        scanned_stocks.add(stock)
-        time.sleep(0.1)
-
-        if len(batch_patterns) >= max_patterns:
-            send_batch(batch_patterns[:max_patterns])
-            batch_patterns = batch_patterns[max_patterns:]
 
     # Send remaining patterns
     if batch_patterns:
