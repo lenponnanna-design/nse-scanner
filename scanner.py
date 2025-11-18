@@ -1,13 +1,10 @@
 import os
 import requests
 import pandas as pd
-import numpy as np
+from nsepy import get_history
 from datetime import date, timedelta
 from dotenv import load_dotenv
 import time
-import yfinance as yf
-from scipy.signal import find_peaks
-from collections import defaultdict
 
 # ----------------------------
 # Load environment variables
@@ -15,71 +12,45 @@ from collections import defaultdict
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", 40))
-MAX_PATTERNS = int(os.getenv("MAX_PATTERNS", 40))
 
 # ----------------------------
 # Telegram messaging
 # ----------------------------
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    max_len = 4000
-    for i in range(0, len(message), max_len):
-        chunk = message[i:i+max_len]
-        payload = {"chat_id": CHAT_ID, "text": chunk, "parse_mode": "HTML"}
-        try:
-            requests.post(url, data=payload)
-        except Exception as e:
-            print("Error sending Telegram message:", e)
-
-# ----------------------------
-# Fetch historical data using YFinance
-# ----------------------------
-def fetch_history(stock_symbol, start_date, end_date):
+    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
     try:
-        df = yf.download(stock_symbol + ".NS",
-                         start=start_date, end=end_date,
-                         progress=False, auto_adjust=False)
-        if df.empty:
-            return pd.DataFrame()
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.droplevel(0)
-        required_cols = ['Open', 'High', 'Low', 'Close']
-        if not all(col in df.columns for col in required_cols):
-            return pd.DataFrame()
-        df = df[required_cols]
-        df.index = pd.to_datetime(df.index)
-        return df
+        # Split into 4000-char chunks
+        max_len = 4000
+        for i in range(0, len(message), max_len):
+            requests.post(url, data={"chat_id": CHAT_ID, "text": message[i:i+max_len], "parse_mode": "HTML"})
     except Exception as e:
-        print(f"Failed to fetch {stock_symbol}: {e}")
-        return pd.DataFrame()
+        print("Error sending Telegram message:", e)
 
 # ----------------------------
-# Detect patterns
+# Candlestick pattern detection
 # ----------------------------
 def detect_patterns(df, stock_name):
-    patterns_list = []
+    messages = []
     if df.empty or len(df) < 2:
-        return []
+        return messages
 
     today = df.iloc[-1]
     yesterday = df.iloc[-2]
-    messages = []
 
     # Bullish Engulfing
     if today['Close'] > today['Open'] and today['Open'] < yesterday['Close'] and today['Close'] > yesterday['Open']:
         messages.append("Bullish Engulfing ✅")
 
     # Piercing Line
-    if yesterday['Close'] < yesterday['Open'] and today['Close'] > today['Open'] \
-       and today['Open'] < yesterday['Low'] and today['Close'] > (yesterday['Close'] + yesterday['Open'])/2:
-        messages.append("Piercing Line 🟢")
+    if today['Open'] < yesterday['Low'] and today['Close'] > yesterday['Close']*0.5 and today['Close'] < yesterday['Open']:
+        messages.append("Piercing Line 💡")
 
     # Hammer
     body = abs(today['Close'] - today['Open'])
-    lower_shadow = (today['Open'] - today['Low'] if today['Close'] >= today['Open'] else today['Close'] - today['Low'])
+    lower_shadow = today['Open'] - today['Low'] if today['Close'] >= today['Open'] else today['Close'] - today['Low']
     upper_shadow = today['High'] - max(today['Close'], today['Open'])
-    if body <= (today['High'] - today['Low']) * 0.3 and lower_shadow > 2*body and upper_shadow < body:
+    if body <= (today['High'] - today['Low']) * 0.3 and lower_shadow > 2 * body and upper_shadow < body:
         messages.append("Hammer 🔨")
 
     # Spinning Top
@@ -88,109 +59,80 @@ def detect_patterns(df, stock_name):
         messages.append("Spinning Top 🔹")
 
     # Resistance Breakout
-    if len(df) >= 2:
-        prior_high = df['High'][:-1].max()
-        if today['Close'] > prior_high:
-            messages.append("Resistance Breakout 📈")
+    if today['Close'] > df['High'].max():
+        messages.append("Resistance Breakout 📈")
 
-    # Trend Line Breakout
-    if len(df) >= LOOKBACK_DAYS:
-        recent_df = df[-LOOKBACK_DAYS:]
-        highs = recent_df['High'].values
-        x_vals = np.arange(len(highs))
-        peak_indices, _ = find_peaks(highs, distance=3)
-        if len(peak_indices) >= 2:
-            y = highs[peak_indices]
-            x = x_vals[peak_indices]
-            m, c = np.polyfit(x, y, 1)
-            trend_y = m * (len(highs)-1) + c
-            if today['Close'] >= trend_y * 0.995:
-                messages.append("Trend Line Breakout ⬆️")
-
-    # Cup & Handle detection (~30 days)
-    if len(df) >= 30:
-        cup_df = df[-30:]
-        left_rim = cup_df['High'].max()
-        bottom_idx = cup_df['Low'].idxmin()
-        bottom_price = cup_df.loc[bottom_idx, 'Low']
-        right_rim_df = cup_df.loc[bottom_idx:]
-        right_rim_price = right_rim_df['High'].max()
-        if abs(right_rim_price - left_rim)/left_rim < 0.05:
-            cup_height = left_rim - bottom_price
-            handle_df = df.loc[right_rim_df.index[-5]:]
-            if handle_df['Low'].min() >= right_rim_price - cup_height/3:
-                messages.append("Cup & Handle ☕️")
+    # Trendline Breakout (last 2 months ~ 60 days)
+    if len(df) >= 10:
+        # Simple trendline: connect lowest points in downtrend to rising price
+        df_last = df[-60:] if len(df) > 60 else df
+        lows = df_last['Low']
+        min_idx = lows.idxmin()
+        min_val = lows.min()
+        if today['Close'] > min_val:
+            messages.append("Trendline Breakout ⬆️")
 
     if messages:
-        price_change = abs(today['Close'] - today['Open'])
-        patterns_list.append({"stock": stock_name, "message": ", ".join(messages), "change": price_change})
-    return patterns_list
+        return [{
+            "stock": stock_name,
+            "message": ", ".join(messages)
+        }]
+    return []
 
 # ----------------------------
-# Static Nifty groups and all NSE symbols
+# Nifty groups prioritization
 # ----------------------------
-def get_stock_groups():
-    nifty_50 = ["RELIANCE","TCS","HDFCBANK","INFY","HDFC","ICICIBANK","KOTAKBANK",
-                "SBIN","LT","ITC","AXISBANK","HCLTECH","BHARTIARTL","ASIANPAINT",
-                "BAJFINANCE","MARUTI","NESTLEIND","SUNPHARMA","HDFCLIFE","TECHM"]
-    nifty_next_50 = ["ADANITRANS","BANDHANBNK","ALOKINDS","MUTHOOTFIN","ICICIPRULI"]
-    nifty_bank = ["HDFCBANK","ICICIBANK","KOTAKBANK","SBIN","AXISBANK"]
-    nifty_100 = list(set(nifty_50 + nifty_next_50))
-    all_stocks = list(set(nifty_50 + nifty_next_50 + nifty_bank))  # Add more if needed
-
-    return [
-        ("Nifty 50", nifty_50),
-        ("Nifty Next 50", nifty_next_50),
-        ("Nifty Bank", nifty_bank),
-        ("Nifty 100", nifty_100),
-        ("Other NSE", all_stocks)
-    ]
+def get_nifty_groups():
+    # Hardcoded Nifty lists (can update manually if needed)
+    nifty_50 = ["RELIANCE", "TCS", "HDFCBANK", "INFY", "HDFC", "ICICIBANK"]
+    nifty_next_50 = ["BAJFINANCE", "BHARTIARTL", "TECHM", "ADANITRANS"]
+    nifty_bank = ["AXISBANK", "KOTAKBANK", "SBIN"]
+    nifty_100 = ["LT", "ITC", "SUNPHARMA", "MARUTI"]
+    return [nifty_50, nifty_next_50, nifty_bank, nifty_100]
 
 # ----------------------------
-# Main scanner
+# Scan NSE stocks
 # ----------------------------
-def scan_stocks(max_patterns=MAX_PATTERNS):
-    group_lists = get_stock_groups()
-    scanned_stocks = set()
-    batch_patterns = []
+def scan_stocks():
+    limit_per_msg = 40
+    summary_list = []
 
-    def send_batch(batch):
-        if not batch:
-            return
-        grouped = defaultdict(list)
-        for item in batch:
-            grouped[item['group']].append(f"{item['stock']}: {item['message']}")
-        msg_lines = ["📊 <b>NSE Daily Summary</b>:"]
-        for group_name in ["Nifty 50","Nifty Next 50","Nifty Bank","Nifty 100","Other NSE"]:
-            if group_name in grouped:
-                msg_lines.append(f"\n<b>{group_name}:</b>")
-                msg_lines.extend(grouped[group_name])
-        send_telegram_message("\n".join(msg_lines))
+    for group in get_nifty_groups():
+        for stock in group:
+            try:
+                df = get_history(
+                    symbol=stock,
+                    start=date.today() - timedelta(days=10),
+                    end=date.today()
+                )
+                if df.empty:
+                    continue
 
-    # Scan priority groups
-    for group_name, group_stocks in group_lists:
-        for stock in group_stocks:
-            if stock in scanned_stocks:
+                patterns = detect_patterns(df, stock)
+                if patterns:
+                    summary_list.extend(patterns)
+
+                time.sleep(0.1)
+
+                # Send batch every 40
+                if len(summary_list) >= limit_per_msg:
+                    msg_text = "📊 <b>NSE Daily Summary</b>:\n" + "\n".join(
+                        [f"<b>{item['stock']}</b>: {item['message']}" for item in summary_list[:limit_per_msg]]
+                    )
+                    send_telegram_message(msg_text)
+                    summary_list = summary_list[limit_per_msg:]
+
+            except Exception as e:
+                print(f"Skipping {stock}: {e}")
                 continue
-            df = fetch_history(stock, date.today()-timedelta(days=60), date.today())
-            if df.empty:
-                continue
-            patterns = detect_patterns(df, stock)
-            for p in patterns:
-                p['group'] = group_name
-            batch_patterns.extend(patterns)
-            scanned_stocks.add(stock)
-            time.sleep(0.1)
 
-            if len(batch_patterns) >= max_patterns:
-                send_batch(batch_patterns[:max_patterns])
-                batch_patterns = batch_patterns[max_patterns:]
-
-    # Send remaining patterns
-    if batch_patterns:
-        send_batch(batch_patterns)
-
-    if not scanned_stocks:
+    # Send remaining
+    if summary_list:
+        msg_text = "📊 <b>NSE Daily Summary</b>:\n" + "\n".join(
+            [f"<b>{item['stock']}</b>: {item['message']}" for item in summary_list]
+        )
+        send_telegram_message(msg_text)
+    elif not summary_list:
         send_telegram_message("📊 <b>NSE Daily Summary</b>: No patterns detected today.")
 
 # ----------------------------
