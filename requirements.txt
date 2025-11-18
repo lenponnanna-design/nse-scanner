@@ -1,5 +1,8 @@
 nsepy
 pandas
+numpy
 requests
 python-dotenv
 nsetools
+yfinance
+scipy
